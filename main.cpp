@@ -4,46 +4,77 @@
 #include <GLUT/glut.h>
 #else
 #include <CL/cl.h>
-#include <GL/glut.h>
+#include <stdlib.h>
+#include <GLFW/glfw3.h>
 #endif
 
 #include <iostream>
 #include <fstream>
+#include <cstring>
 
-const int vW = 500;
-const int vH = 500;
+#include "Camera.h"
+#include "Input.h"
 
-size_t global_work_size = vW * vH;
+int vW;
+int vH;
+
+size_t global_work_size;
+
+float viewMat[16];
 
 cl_kernel kernel;
 cl_context context;
 cl_command_queue queue;
 
 cl_mem screenBuffer;
+cl_mem viewTransform;
+
+GLuint screenTex;
+
+Camera* playerCam;
+Input* input;
+
+void
+initScene() {
+	playerCam = new Camera(vec3(0,0,20),.1f);
+	input = new Input(vW, vH);
+}
 
 void
 initOpenGL() {
     glEnable(GL_TEXTURE_2D);
+    glGenTextures(1, &screenTex);
+}
+
+void
+checkErr(cl_int err) {
+    if(err != CL_SUCCESS)
+		std::cout<<"err   :  " << err << std::endl;
 }
 
 void
 initOpenCL() {
     // 1. Get a platform.
-	cl_platform_id platform;
+	cl_platform_id platform[2];
+	cl_int err;
     
-	clGetPlatformIDs( 1, &platform, NULL );
+	cl_uint numplats;
+	err = clGetPlatformIDs( 2, platform, &numplats );
+
 	// 2. Find a gpu device.
 	cl_device_id device;
     
-	clGetDeviceIDs( platform, CL_DEVICE_TYPE_GPU,
+	err = clGetDeviceIDs( platform[1], CL_DEVICE_TYPE_GPU,
                    1,
                    &device,
                    NULL);
+
 	// 3. Create a context and command queue on that device.
-	cl_context context = clCreateContext( NULL,
+	context = clCreateContext( NULL,
                                          1,
                                          &device,
-                                         NULL, NULL, NULL);
+                                         NULL, NULL, &err);
+                                         
 	queue = clCreateCommandQueue( context,
                                  device,
                                  0, NULL );
@@ -66,7 +97,7 @@ initOpenCL() {
                                                    NULL, NULL );
     
     const char options[] = "-Werror -cl-std=CL1.1";
-	cl_int err = clBuildProgram( program, 1, &device, options, NULL, NULL );
+	err = clBuildProgram( program, 1, &device, options, NULL, NULL );
     
 	if ( err != CL_SUCCESS ) {
         char* programLog;
@@ -91,60 +122,62 @@ initOpenCL() {
     
 	kernel = clCreateKernel( program, "kern", NULL );
 	// 5. Create a data buffer.
-	screenBuffer        = clCreateBuffer( context,
-                                   CL_MEM_WRITE_ONLY,
-                                   vW * vH *sizeof(cl_float4),
-                                   NULL, 0 );
-	cl_mem viewTransform = clCreateBuffer( context,
+	
+	viewTransform = clCreateBuffer( context,
                                    CL_MEM_READ_WRITE,
                                    16 *sizeof(cl_float),
-                                   NULL, 0 );
+                                   NULL, &err );
     
-	clSetKernelArg(kernel, 0, sizeof(screenBuffer), (void*) &screenBuffer);
-	clSetKernelArg(kernel, 1, sizeof(cl_uint), (void*) &vW);
-	clSetKernelArg(kernel, 2, sizeof(cl_uint), (void*) &vH);
 	clSetKernelArg(kernel, 3, sizeof(viewTransform), (void*) &viewTransform);
-    
-    // 6. Fill input data buffers
-	cl_float* viewMatPtr = (cl_float *) clEnqueueMapBuffer( queue,
-                                                           viewTransform,
-                                                           CL_TRUE,
-                                                           CL_MAP_WRITE,
-                                                           0,
-                                                           16 * sizeof(cl_float),
-                                                           0, NULL, NULL, NULL );
-    
-	viewMatPtr[0] = viewMatPtr[5] = viewMatPtr[10] = viewMatPtr[15] = 1;
-    
-	clEnqueueUnmapMemObject(queue, viewTransform, viewMatPtr, 0, 0, 0);
+    	
+	clFinish(queue);
 }
 
 void
 update() {
-    
+
+	input->update(playerCam);
+	playerCam->setMatrices();
+	glGetFloatv(GL_MODELVIEW_MATRIX, viewMat);
+
 }
 
 void
 draw() {
-    
+	update();
+	 
     // 7. Execute the kernel
-	clEnqueueNDRangeKernel( queue,
+	cl_int err = clEnqueueNDRangeKernel( queue,
                            kernel,
                            1,
                            NULL,
                            &global_work_size,
                            NULL, 0, NULL, NULL);
+                           
     
 	// 8. Look at the results via synchronous buffer map.
 	cl_float4 *ptr = (cl_float4 *) clEnqueueMapBuffer( queue,
-                                                            screenBuffer,
-                                                            CL_TRUE,
-                                                            CL_MAP_READ,
-                                                            0,
-                                                            vW * vH * sizeof(cl_float4),
-                                                            0, NULL, NULL, NULL );
-    
-    
+														screenBuffer,
+														CL_TRUE,
+														CL_MAP_READ,
+														0,
+														vW * vH * sizeof(cl_float4),
+														0, NULL, NULL, &err );
+
+	checkErr(err);
+																											
+	cl_float* viewMatPtr = (cl_float *) clEnqueueMapBuffer( queue,
+														   viewTransform,
+														   CL_TRUE,
+														   CL_MAP_WRITE,
+														   0,
+														   16 * sizeof(cl_float),
+														   0, NULL, NULL, &err );
+														   
+
+												
+	memcpy(viewMatPtr, viewMat, sizeof(float)*16);
+	
     unsigned char* pixels = new unsigned char[vW*vH*4];
 	for(int i=0; i <  vW * vH; i++){
 		pixels[i*4] = ptr[i].s[0]*255;
@@ -152,12 +185,12 @@ draw() {
 		pixels[i*4+2] = ptr[i].s[2]*255;
 		pixels[i*4+3] = 1;
 	}
-    
-	glBindTexture(GL_TEXTURE_2D, 1);
-	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-	glTexImage2D(GL_TEXTURE_2D, 0, 4, vW, vH, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, vW, vH, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 	delete [] pixels;
+
+	clEnqueueUnmapMemObject(queue, viewTransform, viewMatPtr, 0, 0, 0);
+	clEnqueueUnmapMemObject(queue, screenBuffer, ptr, 0, 0, 0);
     
 	glClearColor(0,0,0,0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -167,6 +200,7 @@ draw() {
 	glOrtho(-1,1,1,-1,1,100);
 	glMatrixMode(GL_MODELVIEW);
     
+    glPushMatrix();
 	glLoadIdentity();
 	glBegin(GL_QUADS);
 	glTexCoord2f(0,1);
@@ -178,6 +212,7 @@ draw() {
 	glTexCoord2f(1,1);
 	glVertex3f(1,-1,-1);
 	glEnd();
+	glPopMatrix();
 	
     glutSwapBuffers();
     glutPostRedisplay();
@@ -185,24 +220,87 @@ draw() {
     clFinish(queue);
 }
 
+void
+reshape(int w, int h) {
+	vW = w;
+	vH = h;
+	
+	screenBuffer = clCreateBuffer( context,
+							   CL_MEM_WRITE_ONLY,
+							   vW * vH *sizeof(cl_float4),
+							   NULL, NULL );
+
+	clSetKernelArg(kernel, 0, sizeof(screenBuffer), (void*) &screenBuffer);
+	clSetKernelArg(kernel, 1, sizeof(cl_uint), (void*) &vW);
+	clSetKernelArg(kernel, 2, sizeof(cl_uint), (void*) &vH);
+	
+	global_work_size = w * h;
+	
+	glViewport(0, 0, w, h);
+	input->setViewport(w, h);
+
+	unsigned char* pixels = new unsigned char[vW*vH*4];
+	glBindTexture(GL_TEXTURE_2D, screenTex);
+	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	glTexImage2D(GL_TEXTURE_2D, 0, 4, vW, vH, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+	delete [] pixels;
+}
+
+void
+keyboard(unsigned char key, int x, int y) {
+	input->keyboard(key,x,y);
+}
+
+void 
+keyboardUp(unsigned char key, int x, int y) {
+	input->keyboardUp(key,x,y);
+}
+
+void
+passivemotion( int x, int y ) {
+	input->passivemotion(x,y);
+}
+
 int
 main(int argc, char *argv[]) {
-	glutInit(&argc, argv);
-    
-    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
-	glutInitWindowSize(vW, vH);
-	glutCreateWindow("Raytrace");
-    
-	glutDisplayFunc(draw);
-    //glutKeyboardFunc(keyboard);
-    
-	//glClearColor(ambient[0], ambient[1], ambient[2], ambient[3]);
-    
-    initOpenGL();
-    initOpenCL();
-    
-	glutMainLoop();
-    
+
+	initOpenCL();
+
+	initOpenGL();
+
+    initScene();
+
+	 GLFWwindow* window;
+
+    /* Initialize the library */
+    if (!glfwInit())
+        return -1;
+
+    /* Create a windowed mode window and its OpenGL context */
+    window = glfwCreateWindow(640, 480, "Hello World", NULL, NULL);
+    if (!window) {
+        glfwTerminate();
+        return -1;
+    }
+
+    /* Make the window's context current */
+    glfwMakeContextCurrent(window);
+
+    /* Loop until the user closes the window */
+    while (!glfwWindowShouldClose(window))
+    {
+        /* Render here */
+
+        /* Swap front and back buffers */
+        glfwSwapBuffers(window);
+
+        /* Poll for and process events */
+        glfwPollEvents();
+    }
+
+    glfwTerminate();
     return 0;
+
 }
 
