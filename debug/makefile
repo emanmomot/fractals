@@ -11,4 +11,4 @@ main.o: clBuildDebug.c
 	g++ -w -c -o main.o clBuildDebug.c
 
 clean:
-	rm clDebug main.o
+	rm clDebug *.o

@@ -2,7 +2,13 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
-#include <GL/glut.h>
+#ifdef __APPLE__
+#include <GLUT/glut.h>
+#else
+#include <GL/freeglut.h>
+#endif
+
+#define GLM_FORCE_RADIANS
 #include "glm/glm.hpp"
 #include "glm/gtc/quaternion.hpp"
 

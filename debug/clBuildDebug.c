@@ -56,10 +56,12 @@ int main() {
         programLog = (char*) calloc (logSize+1, sizeof(char));
         clGetProgramBuildInfo(program, device,
                               CL_PROGRAM_BUILD_LOG, logSize+1, programLog, NULL);
-        printf("Build failed; error=%d, status=%d, programLog:nn%s",
+        printf("Build failed; error=%d, status=%d, programLog:nn%s\n",
                error, status, programLog);
         free(programLog);
         
+    } else {
+			printf("Build succeeded!\n");
     }
     
     clReleaseContext(context);

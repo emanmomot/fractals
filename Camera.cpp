@@ -9,7 +9,7 @@ Camera::Camera(vec3 pos, float speed) {
 
 void
 Camera::rotate(float angle, vec3 axis) {
-	rot = angleAxis(angle, axis) * rot;
+	rot = angleAxis(angle, axis * rot) * rot;
 }
 
 void
@@ -39,9 +39,13 @@ Camera::setMatrices() {
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
     
+    
 	gluLookAt(pos.x, pos.y, pos.z,	//pos
 		l.x, l.y, l.z,				//lookatpos
 		u.x, u.y, u.z);				//up
+	//mat4 rotMat = mat4_cast(rot);
+	//glLoadMatrixf(&rotMat[0][0]);
+	//glTranslatef(pos.x, pos.y, pos.z);
 }
 
 float

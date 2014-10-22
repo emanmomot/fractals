@@ -5,7 +5,7 @@
 #else
 #include <CL/cl.h>
 #include <stdlib.h>
-#include <GLFW/glfw3.h>
+#include <GL/freeglut.h>
 #endif
 
 #include <iostream>
@@ -14,6 +14,8 @@
 
 #include "Camera.h"
 #include "Input.h"
+
+using namespace std;
 
 int vW;
 int vH;
@@ -36,7 +38,7 @@ Input* input;
 
 void
 initScene() {
-	playerCam = new Camera(vec3(0,0,20),.1f);
+	playerCam = new Camera(vec3(0,0,3),.1f);
 	input = new Input(vW, vH);
 }
 
@@ -49,7 +51,7 @@ initOpenGL() {
 void
 checkErr(cl_int err) {
     if(err != CL_SUCCESS)
-		std::cout<<"err   :  " << err << std::endl;
+		cout<<"err   :  " << err << endl;
 }
 
 void
@@ -63,8 +65,8 @@ initOpenCL() {
 
 	// 2. Find a gpu device.
 	cl_device_id device;
-    
-	err = clGetDeviceIDs( platform[1], CL_DEVICE_TYPE_GPU,
+
+	err = clGetDeviceIDs( platform[numplats-1], CL_DEVICE_TYPE_GPU,
                    1,
                    &device,
                    NULL);
@@ -79,8 +81,8 @@ initOpenCL() {
                                  device,
                                  0, NULL );
 	// 4. Perform runtime source compilation, and obtain kernel entry point.
-	std::ifstream file("kernel.c");
-	std::string source;
+	ifstream file("kernel.c");
+	string source;
 	while(!file.eof()){
 		char line[256];
 		file.getline(line,255);
@@ -114,11 +116,10 @@ initOpenCL() {
         clGetProgramBuildInfo(program, device,
                               CL_PROGRAM_BUILD_LOG, logSize+1, programLog, NULL);
         
-        printf("Build failed; error=%d, programLog:nn%s",
+        printf("Build failed; error=%d, programLog:nn%s\n",
                err, programLog);
         free(programLog);
 	}
-    
     
 	kernel = clCreateKernel( program, "kern", NULL );
 	// 5. Create a data buffer.
@@ -197,22 +198,24 @@ draw() {
     
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	glOrtho(-1,1,1,-1,1,100);
+	//glOrtho(-1,1,1,-1,1,100);
+	gluPerspective(60,1,.01f,1000);
 	glMatrixMode(GL_MODELVIEW);
     
-    glPushMatrix();
-	glLoadIdentity();
+    //glPushMatrix();
+	//glLoadIdentity();
+	glColor3f(.7f,.5f,.7f);
 	glBegin(GL_QUADS);
-	glTexCoord2f(0,1);
+	//glTexCoord2f(0,1);
 	glVertex3f(-1,-1,-1);
-	glTexCoord2f(0,0);
+	//glTexCoord2f(0,0);
 	glVertex3f(-1,1,-1);
-	glTexCoord2f(1,0);
+	//glTexCoord2f(1,0);
 	glVertex3f(1,1,-1);
-	glTexCoord2f(1,1);
+	//glTexCoord2f(1,1);
 	glVertex3f(1,-1,-1);
 	glEnd();
-	glPopMatrix();
+	//glPopMatrix();
 	
     glutSwapBuffers();
     glutPostRedisplay();
@@ -262,45 +265,36 @@ passivemotion( int x, int y ) {
 	input->passivemotion(x,y);
 }
 
+void
+glutEntry(int state) {
+	input->entry(state);
+}
+
 int
 main(int argc, char *argv[]) {
-
+	
+	glutInit(&argc, argv);
+    
+    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
+	glutCreateWindow("Raytrace");
+	glutInitWindowSize(500, 500);
+	//glutFullScreen();
 	initOpenCL();
-
 	initOpenGL();
-
     initScene();
+	glutReshapeFunc(reshape);
 
-	 GLFWwindow* window;
-
-    /* Initialize the library */
-    if (!glfwInit())
-        return -1;
-
-    /* Create a windowed mode window and its OpenGL context */
-    window = glfwCreateWindow(640, 480, "Hello World", NULL, NULL);
-    if (!window) {
-        glfwTerminate();
-        return -1;
-    }
-
-    /* Make the window's context current */
-    glfwMakeContextCurrent(window);
-
-    /* Loop until the user closes the window */
-    while (!glfwWindowShouldClose(window))
-    {
-        /* Render here */
-
-        /* Swap front and back buffers */
-        glfwSwapBuffers(window);
-
-        /* Poll for and process events */
-        glfwPollEvents();
-    }
-
-    glfwTerminate();
-    return 0;
+    
+	glutDisplayFunc(draw);
+	
+    glutKeyboardFunc(keyboard);
+	glutKeyboardUpFunc(keyboardUp);
+    glutSetCursor(GLUT_CURSOR_NONE);
+	glutPassiveMotionFunc(passivemotion);
+	glutEntryFunc(glutEntry);
+	
+	glutMainLoop();
+	return 0;
 
 }
 

@@ -4,6 +4,10 @@
 Input::Input(int vW, int vH) {
 	this->vW = vW;
 	this->vH = vH;
+	
+	lastx = vW/2;
+	lasty = vH/2;
+	glutWarpPointer(lastx, lasty);
 }
 
 void
@@ -11,6 +15,9 @@ Input::update(Camera* cam) {
 	cam->rotate(dx/100.0f, vec3(0,1,0));
 	cam->rotate(dy/100.0f, vec3(1,0,0));
 	cam->translate(cam->getSpeed() * dir);
+	
+	dx = 0;
+	dy = 0;
 }
 
 void
@@ -55,10 +62,20 @@ Input::keyboardUp(unsigned char key, int x, int y) {
 void 
 Input::passivemotion( int x, int y ) {
 	
-	dx = x - vW/2;
-	dy = y - vH/2;
+	dx = x - lastx;
+	dy = y - lasty;
+	
+	lastx = x;
+	lasty = y;
+}
 
-	glutWarpPointer( vW/2, vH/2);
+void
+Input::entry(int state) {
+	if(state == GLUT_LEFT) {
+		lastx = vW/2;
+		lasty = vH/2;
+		glutWarpPointer(lastx, lasty);
+	}
 }
 
 void
